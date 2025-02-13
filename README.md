@@ -24,18 +24,6 @@
 * **Threading:** The fetching process is run on a separate thread to ensure a responsive user experience.
 * **App ID Selection:** Handles the selection of the app ID through a dedicated window to address cases where the app name search returns more than one result.
 
-## Skills Demonstrated
-
-*   **Python Programming:** Core language for the entire application.
-*   **Data Scraping:**  Using the `google-play-scraper` library to extract data from the Google Play Store.
-*   **Data Manipulation and Analysis:**  Employing `pandas` for data cleaning, transformation (date handling, calculating rolling averages, resampling), and aggregation.
-*   **Data Visualization:**  Creating informative plots with `matplotlib`, including line plots and date-based formatting.
-*   **GUI Development:** Building a user-friendly interface with `tkinter`.
-*   **Error Handling:** Implementing robust error handling (e.g., network issues, API limits, invalid input) and retries.
-*   **File I/O:** Saving data to CSV files.
-*   **Threading:** Implementing multi-threading to improve the responsiveness of the GUI, particularly during the review fetching process.
-*   **Asynchronous Operations:** Managing asynchronous tasks (fetching reviews) and updating the GUI accordingly.
-
 ## Requirements
 
 *   Python 3.7+
@@ -93,16 +81,6 @@
 *   **API Changes:**  The Google Play Store's API may change without notice, which could break the functionality of this scraper.
 *   **Data Accuracy:**  The accuracy of the data depends on the `google-play-scraper` library and the availability of reviews on the Google Play Store.
 *   **Error Handling:**  While the application includes error handling, unexpected issues may still occur.  Check the console output for error messages.
-
-## Future Enhancements
-
-*   **Sentiment Analysis:** Integrate sentiment analysis (e.g., using NLTK or spaCy) to automatically classify reviews as positive, negative, or neutral.
-*   **Keyword Extraction:** Identify frequently mentioned keywords in reviews to understand common user concerns or praises.
-*   **More Visualization Options:**  Add more plot types (e.g., histograms of ratings, box plots).
-*   **User Authentication (Optional):**  For potential deployment as a web app, add user authentication to manage data and access.
-*   **Database Integration:** Store scraped data in a database (e.g., SQLite, PostgreSQL) for more efficient data management and querying.
-* **Automated Updates:** Ability to regularly update the scraped data.
-* **More robust scraping**: Handle CAPTCHAs or other anti-scraping measures that Google might employ.
 
 ## Disclaimer
 
