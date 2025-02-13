@@ -2,8 +2,7 @@
 
 ## Overview
 
-**FinRate PH** is a desktop application built with Python and Tkinter that allows users to scrape, analyze, and visualize user reviews of financial applications from the Google Play Store, with a particular focus on apps available in the Philippines.  It leverages the `google-play-scraper` library for data retrieval and `pandas`, `matplotlib` for data processing and visualization. This tool provides insights into user sentiment towards financial apps over time. This project showcases my skills in data acquisition, data manipulation, visualization, and GUI development.
-
+**FinRate PH** is a desktop application built with Python and Tkinter that allows users to scrape, analyze, and visualize user reviews of financial applications from the Google Play Store, with a particular focus on apps available in the Philippines.  It leverages the `google-play-scraper` library for data retrieval and `pandas`, `matplotlib` for data processing and visualization. This tool provides insights into user sentiment towards financial apps over time.
 ![Comparison of financial apps](images/app.png)
 ## Features
 
