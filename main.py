@@ -268,7 +268,7 @@ class AppReviewGUI:
 
     def __init__(self, master):
         self.master = master
-        master.title("Google Play App Review Scraper")
+        master.title("FinRate PH")
         master.geometry("800x700")
 
         self.app_ids = []
