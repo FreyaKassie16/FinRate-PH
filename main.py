@@ -260,6 +260,7 @@ def create_combined_plot(ax, all_reviews_data, plot_type="cumulative"):
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right")
     ax.legend()
     ax.figure.tight_layout()  # Only call this once
+    plt.savefig("images/example.png")
 
 
 class AppReviewGUI:
