@@ -1,180 +1,216 @@
-import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
-import threading
 import os
-import pandas as pd
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-import matplotlib.pyplot as plt
-from scraper import search_app, get_app_reviews
-from plotting import create_plot, create_combined_plot
-from utils import save_reviews_to_csv
 from typing import List, Optional
 
+import matplotlib.pyplot as plt
+import pandas as pd
+from matplotlib.backends.backend_qt5agg import (
+    FigureCanvasQTAgg as FigureCanvas,
+)
+from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QGridLayout,
+    QGroupBox,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
-class AppReviewGUI:
-    def __init__(self, master: tk.Tk) -> None:
-        self.master = master
-        master.title("FinRate PH")
-        master.geometry("800x700")
+from plotting import create_combined_plot, create_plot
+from scraper import get_app_reviews, search_app
+from utils import save_reviews_to_csv
+
+
+class FetchThread(QThread):
+    status_update = pyqtSignal(str)
+    finished = pyqtSignal()
+
+    def __init__(
+        self, app_ids, app_names, max_reviews, output_dir, all_app_data
+    ):
+        super().__init__()
+        self.app_ids = app_ids
+        self.app_names = app_names
+        self.max_reviews = max_reviews
+        self.output_dir = output_dir
+        self.all_app_data = all_app_data
+
+    def run(self):
+        if not self.app_ids:
+            QMessageBox.warning(
+                None, "Warning", "Please add at least one App ID."
+            )
+            self.finished.emit()
+            return
+
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
+
+        for app_id in self.app_ids:
+            app_name = self.app_names[app_id]
+            self.status_update.emit(f"Fetching reviews for {app_name}...")
+            reviews_list = get_app_reviews(
+                app_id, max_reviews=self.max_reviews
+            )
+            if reviews_list:
+                reviews_df = pd.DataFrame(reviews_list)
+                reviews_df["review_date"] = pd.to_datetime(
+                    reviews_df["review_date"]
+                )
+                reviews_df["app_name"] = app_name
+                self.all_app_data[app_id] = reviews_df
+                filename = os.path.join(
+                    self.output_dir, f"{app_id}_reviews.csv"
+                )
+                save_reviews_to_csv(reviews_df, filename)
+            else:
+                QMessageBox.information(
+                    None, "Info", f"No reviews retrieved for {app_id}."
+                )
+        self.status_update.emit("Reviews fetched and saved.")
+        self.finished.emit()
+
+
+class AppSelectionDialog(QDialog):
+    def __init__(self, app_titles: List[str], app_ids: List[str], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Choose App")
+        self.app_ids = app_ids
+        self.selected_app_id = None
+
+        layout = QVBoxLayout()
+        self.list_widget = QListWidget()
+        self.list_widget.addItems(app_titles)
+        layout.addWidget(self.list_widget)
+
+        ok_button = QPushButton("OK")
+        ok_button.clicked.connect(self.on_select)
+        layout.addWidget(ok_button)
+
+        self.setLayout(layout)
+
+    def on_select(self):
+        try:
+            index = self.list_widget.currentRow()
+            if index >= 0:
+                self.selected_app_id = self.app_ids[index]
+                self.accept()
+            else:
+                QMessageBox.warning(self, "Warning", "Please select an app.")
+        except IndexError:
+            QMessageBox.warning(self, "Warning", "Please select an app.")
+
+
+class AppReviewGUI(QMainWindow):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle("FinRate PH")
+        self.setGeometry(100, 100, 800, 850)
 
         self.app_ids = []
         self.all_app_data = {}  # Store DataFrames here
         self.output_dir = "app_reviews"
         self.app_names = {}  # Dictionary to map app_id to app_name
 
-        # GUI Elements
-        self.app_name_frame = ttk.LabelFrame(master, text="App Names")
-        self.app_name_frame.grid(row=0, column=0, padx=10, pady=5, sticky="ew")
-        master.columnconfigure(0, weight=1)
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+        main_layout = QVBoxLayout(central_widget)
 
-        self.app_name_label = ttk.Label(
-            self.app_name_frame, text="App Names (comma-separated):"
-        )
-        self.app_name_label.grid(row=0, column=0, sticky="w", padx=5, pady=2)
-        self.app_name_entry = ttk.Entry(self.app_name_frame, width=50)
-        self.app_name_entry.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
-        self.app_name_frame.columnconfigure(1, weight=1)
-        self.add_app_name_button = ttk.Button(
-            self.app_name_frame, text="Add", command=self.add_app_name
-        )
-        self.add_app_name_button.grid(row=0, column=2, padx=5, pady=2)
+        self.app_name_group = QGroupBox("App Names")
+        app_name_layout = QGridLayout()
+        self.app_name_label = QLabel("App Names (comma-separated):")
+        self.app_name_entry = QLineEdit()
+        self.app_name_entry.setMinimumWidth(300)
+        self.add_app_name_button = QPushButton("Add")
+        self.add_app_name_button.clicked.connect(self.add_app_name)
+        app_name_layout.addWidget(self.app_name_label, 0, 0)
+        app_name_layout.addWidget(self.app_name_entry, 0, 1)
+        app_name_layout.addWidget(self.add_app_name_button, 0, 2)
+        self.app_id_tree = QTreeWidget()
+        self.app_id_tree.setHeaderLabels(["App Id", "App Name"])
+        self.app_id_tree.setColumnWidth(0, 200)
+        app_name_layout.addWidget(self.app_id_tree, 1, 0, 1, 3)
+        self.remove_app_id_button = QPushButton("Remove Selected")
+        self.remove_app_id_button.clicked.connect(self.remove_app_id)
+        app_name_layout.addWidget(self.remove_app_id_button, 2, 0, 1, 3)
+        self.app_name_group.setLayout(app_name_layout)
+        main_layout.addWidget(self.app_name_group)
 
-        self.app_id_tree = ttk.Treeview(
-            self.app_name_frame,
-            columns=("App ID", "App Name"),
-            show="headings",
-            height=5,
+        fetch_widget = QWidget()
+        fetch_layout = QGridLayout()
+        self.max_reviews_label = QLabel(
+            "Max Reviews per App (if None, fetches all [SLOW!!]):"
         )
-        self.app_id_tree.heading("#1", text="App ID")
-        self.app_id_tree.heading("#2", text="App Name")
-        self.app_id_tree.column("#1", anchor="w")
-        self.app_id_tree.column("#2", anchor="w")
-        self.app_id_tree.grid(
-            row=1, column=0, columnspan=3, sticky="ew", padx=5, pady=2
-        )
-        self.remove_app_id_button = ttk.Button(
-            self.app_name_frame,
-            text="Remove Selected",
-            command=self.remove_app_id,
-        )
-        self.remove_app_id_button.grid(
-            row=2, column=0, columnspan=3, padx=5, pady=2
-        )
+        self.max_reviews_entry = QLineEdit()
+        self.max_reviews_entry.setMaximumWidth(100)
+        self.fetch_button = QPushButton("Fetch Reviews")
+        self.fetch_button.clicked.connect(self.fetch_reviews)
+        fetch_layout.addWidget(self.max_reviews_label, 0, 0)
+        fetch_layout.addWidget(self.max_reviews_entry, 0, 1)
+        fetch_layout.addWidget(self.fetch_button, 0, 2)
+        fetch_widget.setLayout(fetch_layout)
+        main_layout.addWidget(fetch_widget)
 
-        self.fetch_frame = ttk.Frame(master)
-        self.fetch_frame.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
+        self.status_label = QLabel("")
+        main_layout.addWidget(self.status_label)
 
-        self.max_reviews_label = ttk.Label(
-            self.fetch_frame,
-            text="Max Reviews per App (if None, fetches all [SLOW!!]):",
+        self.visualization_group = QGroupBox("Visualization")
+        vis_layout = QGridLayout()
+        self.single_app_label = QLabel("Visualize Single App:")
+        self.single_app_combo = QComboBox()
+        self.plot_type_label = QLabel("Plot Type:")
+        self.plot_type_combo = QComboBox()
+        self.plot_type_combo.addItems(["cumulative", "rolling", "monthly"])
+        self.plot_type_combo.setCurrentText("cumulative")
+        self.visualize_single_button = QPushButton("Visualize")
+        self.visualize_single_button.clicked.connect(self.visualize_single)
+        vis_layout.addWidget(self.single_app_label, 0, 0)
+        vis_layout.addWidget(self.single_app_combo, 0, 1)
+        vis_layout.addWidget(self.plot_type_label, 0, 2)
+        vis_layout.addWidget(self.plot_type_combo, 0, 3)
+        vis_layout.addWidget(self.visualize_single_button, 0, 4)
+        self.visualize_combined_label = QLabel("Visualize Combined Apps:")
+        self.visualize_combined_plot_type_combo = QComboBox()
+        self.visualize_combined_plot_type_combo.addItems(
+            ["cumulative", "rolling", "monthly"]
         )
-        self.max_reviews_label.grid(
-            row=0, column=0, sticky="w", padx=5, pady=2
-        )
-        self.max_reviews_entry = ttk.Entry(self.fetch_frame, width=10)
-        self.max_reviews_entry.grid(
-            row=0, column=1, sticky="w", padx=5, pady=2
-        )
+        self.visualize_combined_plot_type_combo.setCurrentText("cumulative")
+        self.visualize_combined_button = QPushButton("Visualize")
+        self.visualize_combined_button.clicked.connect(self.visualize_combined)
+        vis_layout.addWidget(self.visualize_combined_label, 1, 0)
+        vis_layout.addWidget(self.visualize_combined_plot_type_combo, 1, 1)
+        vis_layout.addWidget(self.visualize_combined_button, 1, 2)
+        self.visualization_group.setLayout(vis_layout)
+        main_layout.addWidget(self.visualization_group)
 
-        self.fetch_button = ttk.Button(
-            self.fetch_frame, text="Fetch Reviews", command=self.fetch_reviews
-        )
-        self.fetch_button.grid(row=0, column=2, padx=10, pady=5)
+        # Output Directory Frame
+        output_widget = QWidget()
+        output_layout = QGridLayout()
+        self.output_dir_label = QLabel("Output Directory:")
+        self.output_dir_display = QLineEdit(self.output_dir)
+        self.output_dir_display.setReadOnly(True)
+        self.output_dir_button = QPushButton("Change...")
+        self.output_dir_button.clicked.connect(self.set_output_directory)
+        output_layout.addWidget(self.output_dir_label, 0, 0)
+        output_layout.addWidget(self.output_dir_display, 0, 1)
+        output_layout.addWidget(self.output_dir_button, 0, 2)
+        output_widget.setLayout(output_layout)
+        main_layout.addWidget(output_widget)
 
-        self.status_label = ttk.Label(master, text="", anchor="w")
-        self.status_label.grid(row=2, column=0, sticky="ew", padx=10, pady=2)
-
-        self.visualization_frame = ttk.LabelFrame(master, text="Visualization")
-        self.visualization_frame.grid(
-            row=3, column=0, padx=10, pady=5, sticky="ew"
-        )
-
-        self.single_app_label = ttk.Label(
-            self.visualization_frame, text="Visualize Single App:"
-        )
-        self.single_app_label.grid(row=0, column=0, sticky="w", padx=5, pady=2)
-        self.single_app_combo = ttk.Combobox(
-            self.visualization_frame, values=[], state="readonly"
-        )
-        self.single_app_combo.grid(
-            row=0, column=1, sticky="ew", padx=5, pady=2
-        )
-
-        self.plot_type_label = ttk.Label(
-            self.visualization_frame, text="Plot Type:"
-        )
-        self.plot_type_label.grid(row=0, column=2, sticky="w", padx=5, pady=2)
-        self.plot_type_combo = ttk.Combobox(
-            self.visualization_frame,
-            values=["cumulative", "rolling", "monthly"],
-            state="readonly",
-        )
-        self.plot_type_combo.grid(row=0, column=3, sticky="ew", padx=5, pady=2)
-        self.plot_type_combo.set("cumulative")
-
-        self.visualize_single_button = ttk.Button(
-            self.visualization_frame,
-            text="Visualize",
-            command=self.visualize_single,
-        )
-        self.visualize_single_button.grid(row=0, column=4, padx=5, pady=2)
-
-        self.visualize_combined_label = ttk.Label(
-            self.visualization_frame, text="Visualize Combined Apps:"
-        )
-        self.visualize_combined_label.grid(
-            row=1, column=0, sticky="w", padx=5, pady=2
-        )
-        self.visualize_combined_plot_type_combo = ttk.Combobox(
-            self.visualization_frame,
-            values=["cumulative", "rolling", "monthly"],
-            state="readonly",
-        )
-        self.visualize_combined_plot_type_combo.grid(
-            row=1, column=1, sticky="ew", padx=5, pady=2
-        )
-        self.visualize_combined_plot_type_combo.set("cumulative")
-
-        self.visualize_combined_button = ttk.Button(
-            self.visualization_frame,
-            text="Visualize",
-            command=self.visualize_combined,
-        )
-        self.visualize_combined_button.grid(row=1, column=2, padx=5, pady=2)
-
-        self.output_dir_frame = ttk.Frame(master)
-        self.output_dir_frame.grid(
-            row=4, column=0, sticky="ew", padx=10, pady=5
-        )
-
-        self.output_dir_label = ttk.Label(
-            self.output_dir_frame, text="Output Directory:"
-        )
-        self.output_dir_label.grid(row=0, column=0, sticky="w", padx=5, pady=2)
-        self.output_dir_display = ttk.Entry(
-            self.output_dir_frame, width=50, state="readonly"
-        )
-        self.output_dir_display.grid(
-            row=0, column=1, sticky="ew", padx=5, pady=2
-        )
-        self.output_dir_frame.columnconfigure(1, weight=1)
-        self.output_dir_button = ttk.Button(
-            self.output_dir_frame,
-            text="Change...",
-            command=self.set_output_directory,
-        )
-        self.output_dir_button.grid(row=0, column=2, padx=5, pady=2)
-        self.output_dir_display.insert(0, self.output_dir)
-
-        self.plot_frame = ttk.Frame(master)
-        self.plot_frame.grid(row=5, column=0, padx=10, pady=5, sticky="nsew")
-        master.rowconfigure(5, weight=1)
-
+        # Plot Frame
         self.fig, self.ax = plt.subplots(figsize=(8, 5), dpi=100)
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_frame)
-        self.canvas.get_tk_widget().pack(
-            side=tk.TOP, fill=tk.BOTH, expand=True
-        )
+        self.canvas = FigureCanvas(self.fig)
+        main_layout.addWidget(self.canvas)
+        main_layout.setStretch(5, 1)  # Allow plot to expand
 
     def choose_app_id(
         self, app_titles: List[str], app_ids: List[str]
@@ -189,30 +225,13 @@ class AppReviewGUI:
         Returns:
             str: The selected app ID or None if no selection is made.
         """
-        dialog = tk.Toplevel(self.master)
-        dialog.title("Choose App")
-        listbox = tk.Listbox(dialog, width=50, height=min(len(app_titles), 10))
-        for title in app_titles:
-            listbox.insert(tk.END, title)
-        listbox.pack(padx=10, pady=10)
-        selected_app_id = tk.StringVar()
-
-        def on_select():
-            try:
-                index = listbox.curselection()[0]
-                selected_app_id.set(app_ids[index])
-                dialog.destroy()
-            except IndexError:
-                messagebox.showwarning("Warning", "Please select an app.")
-
-        ok_button = ttk.Button(dialog, text="OK", command=on_select)
-        ok_button.pack(pady=5)
-        dialog.grab_set()
-        dialog.wait_window()
-        return selected_app_id.get() if selected_app_id.get() else None
+        dialog = AppSelectionDialog(app_titles, app_ids, self)
+        if dialog.exec_():
+            return dialog.selected_app_id
+        return None
 
     def add_app_name(self) -> None:
-        app_names_input = self.app_name_entry.get()
+        app_names_input = self.app_name_entry.text()
         new_app_names = [
             name.strip() for name in app_names_input.split(",") if name.strip()
         ]
@@ -223,105 +242,66 @@ class AppReviewGUI:
                 app_titles = [result["title"] for result in results]
                 app_ids = [result["appId"] for result in results]
                 selected_app_id = self.choose_app_id(app_titles, app_ids)
-                if selected_app_id:
-                    if selected_app_id not in self.app_ids:
-                        self.app_ids.append(selected_app_id)
-                        self.app_names[selected_app_id] = app_name
-                        self.app_id_tree.insert(
-                            "", tk.END, values=(selected_app_id, app_name)
-                        )
+                if selected_app_id and selected_app_id not in self.app_ids:
+                    self.app_ids.append(selected_app_id)
+                    self.app_names[selected_app_id] = app_name
+                    item = QTreeWidgetItem(
+                        self.app_id_tree, [selected_app_id, app_name]
+                    )
             else:
-                messagebox.showinfo(
-                    "App Not Found", f"No apps found for '{app_name}'."
+                QMessageBox.information(
+                    self, "App Not Found", f"No apps found for '{app_name}'."
                 )
-        self.app_name_entry.delete(0, tk.END)
+        self.app_name_entry.clear()
         self.update_single_app_combobox()
 
     def remove_app_id(self) -> None:
-        try:
-            selected_item = self.app_id_tree.selection()[0]
-            app_id_to_remove = self.app_id_tree.item(selected_item)["values"][
-                0
-            ]
-            self.app_id_tree.delete(selected_item)
-            self.app_ids.remove(app_id_to_remove)
-            del self.app_names[app_id_to_remove]
-            self.update_single_app_combobox()
-        except IndexError:
-            messagebox.showwarning("Warning", "No App ID selected.")
+        selected_items = self.app_id_tree.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Warning", "No App ID selected.")
+            return
+        item = selected_items[0]
+        app_id_to_remove = item.text(0)
+        self.app_ids.remove(app_id_to_remove)
+        del self.app_names[app_id_to_remove]
+        self.app_id_tree.takeTopLevelItem(
+            self.app_id_tree.indexOfTopLevelItem(item)
+        )
+        self.update_single_app_combobox()
 
     def update_single_app_combobox(self) -> None:
-        self.single_app_combo["values"] = [
-            self.app_names[app_id] for app_id in self.app_ids
-        ]
+        self.single_app_combo.clear()
+        self.single_app_combo.addItems(
+            [self.app_names[app_id] for app_id in self.app_ids]
+        )
 
     def fetch_reviews(self) -> None:
-        self.fetch_button.config(state="disabled")
+        self.fetch_button.setEnabled(False)
         try:
-            thread = threading.Thread(target=self._fetch_reviews_thread)
-            thread.start()
-        finally:
-            self.master.after(0, lambda: self.wait_for_thread(thread))
-
-    def _fetch_reviews_thread(self) -> None:
-        self.all_app_data = {}
-        if not self.app_ids:
-            messagebox.showwarning(
-                "Warning", "Please add at least one App ID."
-            )
-            return
-
-        try:
-            max_reviews_input = self.max_reviews_entry.get()
-            max_reviews_per_app = (
-                int(max_reviews_input) if max_reviews_input else None
-            )
+            max_reviews_input = self.max_reviews_entry.text()
+            max_reviews = int(max_reviews_input) if max_reviews_input else None
         except ValueError:
-            messagebox.showerror("Error", "Invalid Max Reviews value.")
+            QMessageBox.critical(self, "Error", "Invalid Max Reviews value.")
+            self.fetch_button.setEnabled(True)
             return
 
-        if not os.path.exists(self.output_dir):
-            os.makedirs(self.output_dir)
-
-        for app_id in self.app_ids:
-            app_name = self.app_names[app_id]
-            self.status_label.config(
-                text=f"Fetching reviews for {app_name}..."
-            )
-            self.master.update_idletasks()
-
-            reviews_list = get_app_reviews(
-                app_id, max_reviews=max_reviews_per_app
-            )
-            if reviews_list:
-                reviews_df = pd.DataFrame(reviews_list)
-                reviews_df["review_date"] = pd.to_datetime(
-                    reviews_df["review_date"]
-                )
-                reviews_df["app_name"] = app_name
-                self.all_app_data[app_id] = reviews_df
-
-                filename = os.path.join(
-                    self.output_dir, f"{app_id}_reviews.csv"
-                )
-                save_reviews_to_csv(reviews_df, filename)
-            else:
-                messagebox.showinfo(
-                    "Info", f"No reviews retrieved for {app_id}."
-                )
-
-        self.status_label.config(text="Reviews fetched and saved.")
-
-    def wait_for_thread(self, thread: threading.Thread) -> None:
-        if thread.is_alive():
-            self.master.after(100, lambda: self.wait_for_thread(thread))
-        else:
-            self.fetch_button.config(state="normal")
+        self.thread = FetchThread(
+            self.app_ids,
+            self.app_names,
+            max_reviews,
+            self.output_dir,
+            self.all_app_data,
+        )
+        self.thread.status_update.connect(self.status_label.setText)
+        self.thread.finished.connect(
+            lambda: self.fetch_button.setEnabled(True)
+        )
+        self.thread.start()
 
     def visualize_single(self) -> None:
-        selected_app_name = self.single_app_combo.get()
+        selected_app_name = self.single_app_combo.currentText()
         if not selected_app_name:
-            messagebox.showwarning("Warning", "Select an app.")
+            QMessageBox.warning(self, "Warning", "Select an app.")
             return
 
         selected_app_id = next(
@@ -333,10 +313,11 @@ class AppReviewGUI:
             None,
         )
         if not selected_app_id or selected_app_id not in self.all_app_data:
-            messagebox.showerror("Error", f"No data for {selected_app_name}.")
+            QMessageBox.critical(
+                self, "Error", f"No data for {selected_app_name}."
+            )
             return
-
-        plot_type = self.plot_type_combo.get()
+        plot_type = self.plot_type_combo.currentText()
         create_plot(
             self.ax,
             self.all_app_data[selected_app_id],
@@ -347,20 +328,18 @@ class AppReviewGUI:
 
     def visualize_combined(self) -> None:
         if len(self.all_app_data) < 2:
-            messagebox.showwarning(
-                "Warning", "Fetch reviews for at least two apps."
+            QMessageBox.warning(
+                self, "Warning", "Fetch reviews for at least two apps."
             )
             return
-
-        plot_type = self.visualize_combined_plot_type_combo.get()
+        plot_type = self.visualize_combined_plot_type_combo.currentText()
         create_combined_plot(self.ax, self.all_app_data, plot_type)
         self.canvas.draw()
 
     def set_output_directory(self) -> None:
-        directory = filedialog.askdirectory(initialdir=self.output_dir)
+        directory = QFileDialog.getExistingDirectory(
+            self, "Select Output Directory", self.output_dir
+        )
         if directory:
             self.output_dir = directory
-            self.output_dir_display.config(state="normal")
-            self.output_dir_display.delete(0, tk.END)
-            self.output_dir_display.insert(0, self.output_dir)
-            self.output_dir_display.config(state="readonly")
+            self.output_dir_display.setText(self.output_dir)

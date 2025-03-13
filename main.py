@@ -1,7 +1,9 @@
-import tkinter as tk
+import sys
+from PyQt5.QtWidgets import QApplication
 from gui import AppReviewGUI
 
 if __name__ == "__main__":
-    root = tk.Tk()
-    app = AppReviewGUI(root)
-    root.mainloop()
+    app = QApplication(sys.argv)
+    window = AppReviewGUI()
+    window.show()
+    sys.exit(app.exec_())
