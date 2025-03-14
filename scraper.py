@@ -85,4 +85,6 @@ def get_app_reviews(
             if attempt == retries - 1:
                 print(f"Error fetching reviews for {app_id}: {e}")
                 return []
-            time.sleep(5)
+            wait_time = min(2**attempt, 16)
+            print(f"Retrying in {wait_time} seconds...")
+            time.sleep(wait_time)
