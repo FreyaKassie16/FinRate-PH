@@ -76,7 +76,7 @@ def get_app_reviews(
                 if continuation_token.token is None:
                     break
 
-                time.sleep(2)
+                time.sleep(1)
 
             return all_reviews
 
