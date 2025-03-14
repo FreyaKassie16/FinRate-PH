@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional
+from typing import List, Optional, Dict
 
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -35,8 +35,13 @@ class FetchThread(QThread):
     finished = pyqtSignal()
 
     def __init__(
-        self, app_ids, app_names, max_reviews, output_dir, all_app_data
-    ):
+        self,
+        app_ids: List[str],
+        app_names: Dict[str, str],
+        max_reviews: Optional[int],
+        output_dir: str,
+        all_app_data: Dict[str, pd.DataFrame],
+    ) -> None:
         super().__init__()
         self.app_ids = app_ids
         self.app_names = app_names
@@ -44,7 +49,7 @@ class FetchThread(QThread):
         self.output_dir = output_dir
         self.all_app_data = all_app_data
 
-    def run(self):
+    def run(self) -> None:
         if not self.app_ids:
             QMessageBox.warning(
                 None, "Warning", "Please add at least one App ID."
@@ -81,7 +86,9 @@ class FetchThread(QThread):
 
 
 class AppSelectionDialog(QDialog):
-    def __init__(self, app_titles: List[str], app_ids: List[str], parent=None):
+    def __init__(
+        self, app_titles: List[str], app_ids: List[str], parent=None
+    ) -> None:
         super().__init__(parent)
         self.setWindowTitle("Choose App")
         self.app_ids = app_ids
@@ -98,7 +105,7 @@ class AppSelectionDialog(QDialog):
 
         self.setLayout(layout)
 
-    def on_select(self):
+    def on_select(self) -> None:
         try:
             index = self.list_widget.currentRow()
             if index >= 0:
